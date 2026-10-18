@@ -1,17 +1,19 @@
+# Ambientes virtuais Python
 .venv/
+.venv311/
+venv/
+
+# Arquivos temporários do Python
 __pycache__/
-*.pyc
- 
-# Jupyter Notebooks — checkpoints
+*.py[cod]
+
+# Arquivos temporários do Jupyter
 .ipynb_checkpoints/
- 
-# Dados locais (não versionar dados brutos)
-data/
- 
-# Variáveis de ambiente
+
+# Configurações locais e credenciais
 .env
- 
-# Logs
-*.log
-EOF
- 
+.env.*
+!.env.example
+
+# Arquivos do macOS
+.DS_Store
