@@ -1,0 +1,26 @@
+services:
+  minio:
+    image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z   # fixe a versão; evite "latest"
+    container_name: minio-datalake
+    ports:
+      - "9000:9000" # API S3
+      - "9001:9001" # Console web
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+      MINIO_UPDATE: "off"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      # a imagem é mínima (UBI micro) e pode não ter curl; usa o mc embutido
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  minio_data:
+    driver: local
