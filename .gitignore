@@ -17,3 +17,6 @@ __pycache__/
 
 # Arquivos do macOS
 .DS_Store
+# Dados sinteticos grandes
+data/bronze/sintetico/pedidos.csv
+data/bronze/sintetico/pedidos.jsonl
