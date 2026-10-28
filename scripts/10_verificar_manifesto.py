@@ -5,6 +5,7 @@ O manifesto é a base para auditoria e rastreabilidade do Data Lake.
 
 import boto3
 import json
+from course_config import list_objects
  
 client = boto3.client(
     "s3",
@@ -14,9 +15,9 @@ client = boto3.client(
     region_name="us-east-1",
 )
  
-response = client.list_objects_v2(Bucket="bronze", Prefix="_manifesto/")
+objetos = list_objects("bronze", "_manifesto/")
 manifestos = sorted(
-    [obj["Key"] for obj in response.get("Contents", []) if obj["Key"].endswith(".json")],
+    [obj["Key"] for obj in objetos if obj["Key"].endswith(".json")],
     reverse=True,  # Mais recentes primeiro
 )
  

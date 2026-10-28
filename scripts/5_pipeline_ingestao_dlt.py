@@ -5,6 +5,8 @@ As camadas representam diferentes estágios de processamento dos dados:
 - bronze: Dados brutos ingeridos das fontes originais, sem transformação   
 """
 
+import course_config  # carrega .env e mantém o estado dlt neste projeto
+
 import logging
 import os
 from datetime import datetime, timezone
@@ -64,7 +66,7 @@ def obter_api_key() -> str:
 
 @dlt.resource(
     name="countries",
-    write_disposition="replace",   # Substitui os dados a cada execução (dado cadastral)
+    write_disposition="append",   # Bronze preserva as execuções anteriores
     primary_key="codes__alpha_2",  # ISO 3166-1 alpha-2 (codes.alpha_2 achatado pelo dlt)
 )
 def extrair_paises() -> Iterator[list[dict]]:

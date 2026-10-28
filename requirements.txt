@@ -1,0 +1,13 @@
+pandas==3.0.6
+numpy==2.4.6
+pyarrow==26.0.0
+boto3==1.43.114
+jupyter==1.1.1
+ipykernel==7.4.0
+dlt[filesystem]==1.31.0
+s3fs==2026.9.0
+requests==2.34.2
+truststore==0.10.5
+duckdb==2.0.0
+pyiceberg[sql-sqlite]==0.12.0
+python-dotenv==1.2.4

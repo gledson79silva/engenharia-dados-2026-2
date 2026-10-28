@@ -21,5 +21,11 @@ __pycache__/
 data/bronze/sintetico/pedidos.csv
 data/bronze/sintetico/pedidos.jsonl
 
+# Estado local e resultados reproduzíveis
+.dlt/
+.local/
+data/lakehouse/
+data/validation/
+
 # Backup local das instruções do agente
 /AGENTS.md.bak

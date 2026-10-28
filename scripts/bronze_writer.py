@@ -18,6 +18,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from typing import Optional
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
  
@@ -75,7 +76,7 @@ class BronzeWriter:
             f"mes={timestamp.month:02d}/"
             f"dia={timestamp.day:02d}"
         )
-        nome_arquivo = f"{entidade}_{int(timestamp.timestamp())}.parquet"
+        nome_arquivo = f"{entidade}_{int(timestamp.timestamp())}_{uuid4().hex}.parquet"
         return str(PurePosixPath(sistema_origem) / entidade / particao / nome_arquivo)
     
     def _adicionar_metadados(
@@ -127,6 +128,9 @@ class BronzeWriter:
         """
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
+        if timestamp.tzinfo is None:
+            raise ValueError("timestamp deve informar o fuso horário")
+        timestamp = timestamp.astimezone(timezone.utc)
  
         # Adicionar metadados de rastreabilidade
         df_com_metadados = self._adicionar_metadados(
@@ -151,6 +155,7 @@ class BronzeWriter:
             Key=caminho_objeto,
             Body=dados_bytes,
             ContentType="application/octet-stream",
+            IfNoneMatch="*",
             Metadata={
                 "fonte": sistema_origem,
                 "entidade": entidade,
@@ -187,7 +192,7 @@ class BronzeWriter:
         chave_manifesto = (
             f"_manifesto/"
             f"ano={timestamp.year}/mes={timestamp.month:02d}/dia={timestamp.day:02d}/"
-            f"manifesto_{int(timestamp.timestamp())}.json"
+            f"manifesto_{int(timestamp.timestamp())}_{uuid4().hex}.json"
         )
  
         self.client.put_object(
@@ -195,6 +200,7 @@ class BronzeWriter:
             Key=chave_manifesto,
             Body=json.dumps(execucao, indent=2, ensure_ascii=False, default=str),
             ContentType="application/json",
+            IfNoneMatch="*",
         )
  
         logger.info(f"📋 Manifesto registrado: {chave_manifesto}")
@@ -205,26 +211,15 @@ class BronzeWriter:
         Útil para verificar a cobertura temporal dos dados na camada Bronze.
         """
         prefixo = f"{sistema_origem}/{entidade}/"
-        response = self.client.list_objects_v2(
-        Bucket=self.bucket, Prefix=prefixo, Delimiter="/"
-        )
- 
         particoes = []
-        # Navegar recursivamente pelas partições
-        for prefix in response.get("CommonPrefixes", []):
-            sub_response = self.client.list_objects_v2(
-                Bucket=self.bucket, Prefix=prefix["Prefix"], Delimiter="/"
-            )
-            for sub_prefix in sub_response.get("CommonPrefixes", []):
-                sub_sub_response = self.client.list_objects_v2(
-                    Bucket=self.bucket, Prefix=sub_prefix["Prefix"]
-                )
-                for obj in sub_sub_response.get("Contents", []):
-                    if obj["Key"].endswith(".parquet"):
-                        particoes.append({
-                            "caminho": obj["Key"],
-                            "tamanho_bytes": obj["Size"],
-                            "ultima_modificacao": obj["LastModified"],
-                        })
- 
+        for pagina in self.client.get_paginator("list_objects_v2").paginate(
+            Bucket=self.bucket, Prefix=prefixo
+        ):
+            for obj in pagina.get("Contents", []):
+                if obj["Key"].endswith(".parquet") and "/ano=" in obj["Key"]:
+                    particoes.append({
+                        "caminho": obj["Key"],
+                        "tamanho_bytes": obj["Size"],
+                        "ultima_modificacao": obj["LastModified"],
+                    })
         return particoes

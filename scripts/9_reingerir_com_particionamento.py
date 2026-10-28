@@ -14,6 +14,8 @@ REST Countries API v5 (a v3.1 foi descontinuada):
   - Seleção de campos com "response_fields" (caminhos com ponto).
 """
 
+import course_config  # carrega .env e mantém o estado dlt neste projeto
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -93,6 +95,8 @@ def extrair_paises_v5() -> list[dict]:
             break
         time.sleep(0.5)  # limite da API: 20 requisições a cada 10 segundos
 
+    if not paises or len(paises) != meta["total"]:
+        raise RuntimeError("A contagem de países difere do total informado pela API")
     return paises
 
 
@@ -107,122 +111,138 @@ def capital_principal(capitais: list | None) -> str | None:
     return principal.get("name")
 
 
-writer = BronzeWriter()
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--somente", choices=["countries", "pokemon"])
+    args = parser.parse_args()
+    writer = BronzeWriter()
 
-# ── 1. Reingestão da REST Countries API ──────────────────────────────────────
-print("\n" + "─" * 55)
-print("  Reingestão: REST Countries API v5 → Bronze (particionado)")
-print("─" * 55)
 
-paises_raw = extrair_paises_v5()
+    # ── 1. Reingestão da REST Countries API ──────────────────────────────────────
+    print("\n" + "─" * 55)
+    print("  Reingestão: REST Countries API v5 → Bronze (particionado)")
+    print("─" * 55)
 
-# Normalizar os campos aninhados mantendo os MESMOS nomes de colunas da versão
-# anterior, para não quebrar os scripts e consultas que leem esta entidade.
-paises_normalizados = []
-for p in paises_raw:
-    codes = p.get("codes") or {}
-    names = p.get("names") or {}
-    area = p.get("area") or {}
-    coords = p.get("coordinates") or {}
-    paises_normalizados.append({
-        "cca2": codes.get("alpha_2"),
-        "nome_comum": names.get("common"),
-        "nome_oficial": names.get("official"),
-        "regiao": p.get("region"),
-        "continentes": p.get("continents"),
-        "moedas": p.get("currencies"),
-        "populacao": p.get("population"),
-        "area_km2": area.get("kilometers"),
-        "latlng": [coords.get("lat"), coords.get("lng")] if coords else None,
-        "capital": capital_principal(p.get("capitals")),
-    })
+    if args.somente != "pokemon":
+        paises_raw = extrair_paises_v5()
 
-df_countries = pd.DataFrame(paises_normalizados)
+        # Normalizar os campos aninhados mantendo os MESMOS nomes de colunas da versão
+        # anterior, para não quebrar os scripts e consultas que leem esta entidade.
+        paises_normalizados = []
+        for p in paises_raw:
+            codes = p.get("codes") or {}
+            names = p.get("names") or {}
+            area = p.get("area") or {}
+            coords = p.get("coordinates") or {}
+            paises_normalizados.append({
+                "cca2": codes.get("alpha_2"),
+                "nome_comum": names.get("common"),
+                "nome_oficial": names.get("official"),
+                "regiao": p.get("region"),
+                "continentes": p.get("continents"),
+                "moedas": p.get("currencies"),
+                "populacao": p.get("population"),
+                "area_km2": area.get("kilometers"),
+                "latlng": [coords.get("lat"), coords.get("lng")] if coords else None,
+                "capital": capital_principal(p.get("capitals")),
+            })
 
-resultado_countries = writer.gravar(
-    df=df_countries,
-    sistema_origem="restcountries_api",
-    entidade="countries",
-    versao_schema="2.0",  # origem mudou para a API v5 (mesmas colunas, nova procedência)
-)
-# Registrar manifesto
-writer.registrar_manifesto({
-    "pipeline": "rest_countries_bronze",
-    "api_versao": "v5",
-    "execucao_em": datetime.now(timezone.utc).isoformat(),
-    "resultado": resultado_countries,
-})
+        df_countries = pd.DataFrame(paises_normalizados)
+        assert df_countries["nome_comum"].notna().all()
+        assert df_countries["nome_comum"].is_unique
+        codigos_validos = df_countries.loc[df_countries["cca2"].fillna("").ne(""), "cca2"]
+        assert codigos_validos.is_unique  # Algumas entidades da API não têm código ISO.
 
-print(f"  ✅ {resultado_countries['registros']} países gravados")
-print(f"  📍 {resultado_countries['caminho_objeto']}")
+        resultado_countries = writer.gravar(
+            df=df_countries,
+            sistema_origem="restcountries_api",
+            entidade="countries",
+            versao_schema="2.0",  # origem mudou para a API v5 (mesmas colunas, nova procedência)
+        )
+        # Registrar manifesto
+        writer.registrar_manifesto({
+            "pipeline": "rest_countries_bronze",
+            "api_versao": "v5",
+            "execucao_em": datetime.now(timezone.utc).isoformat(),
+            "resultado": resultado_countries,
+        })
 
-# ── 2. Reingestão da PokeAPI (primeiros 50 pokémons) ─────────────────────────
-print("\n" + "─" * 55)
-print("  Reingestão: PokeAPI → Bronze (particionado)")
-print("─" * 55)
+        print(f"  ✅ {resultado_countries['registros']} países gravados")
+        print(f"  📍 {resultado_countries['caminho_objeto']}")
 
-BASE_URL = "https://pokeapi.co/api/v2"
+    # ── 2. Reingestão da PokeAPI (primeiros 50 pokémons) ─────────────────────────
+    print("\n" + "─" * 55)
+    print("  Reingestão: PokeAPI → Bronze (particionado)")
+    print("─" * 55)
 
-pokemon_lista = []
+    if args.somente != "countries":
+        BASE_URL = "https://pokeapi.co/api/v2"
 
-# Buscar lista dos primeiros 50 pokémons
-resp_lista = requests.get(f"{BASE_URL}/pokemon?limit=50&offset=0", timeout=15)
-resp_lista.raise_for_status()
+        pokemon_lista = []
 
-for i, item in enumerate(resp_lista.json()["results"]):
-    resp_detalhe = requests.get(item["url"], timeout=10)
-    resp_detalhe.raise_for_status()
-    d = resp_detalhe.json()
+        # Buscar lista dos primeiros 50 pokémons
+        resp_lista = requests.get(f"{BASE_URL}/pokemon?limit=50&offset=0", timeout=15)
+        resp_lista.raise_for_status()
 
-    pokemon_lista.append({
-        "id": d["id"],
-        "nome": d["name"],
-        "altura_dm": d["height"],
-        "peso_hg": d["weight"],
-        "experiencia_base": d.get("base_experience"),
-        "tipo_primario": d["types"][0]["type"]["name"] if d["types"] else None,
-        "tipo_secundario": d["types"][1]["type"]["name"] if len(d["types"]) > 1 else None,
-        "hp_base": next((s["base_stat"] for s in d["stats"] if s["stat"]["name"] == "hp"), None),
-        "ataque_base": next((s["base_stat"] for s in d["stats"] if s["stat"]["name"] == "attack"), None),
-        "defesa_base": next((s["base_stat"] for s in d["stats"] if s["stat"]["name"] == "defense"), None),
-        "sprite_url": d.get("sprites", {}).get("front_default"),
-    })
+        for i, item in enumerate(resp_lista.json()["results"]):
+            resp_detalhe = requests.get(item["url"], timeout=10)
+            resp_detalhe.raise_for_status()
+            d = resp_detalhe.json()
 
-    if (i + 1) % 10 == 0:
-        print(f"  Extraídos: {i + 1}/50 pokémons...")
-    time.sleep(0.1)
+            pokemon_lista.append({
+                "id": d["id"],
+                "nome": d["name"],
+                "altura_dm": d["height"],
+                "peso_hg": d["weight"],
+                "experiencia_base": d.get("base_experience"),
+                "tipo_primario": d["types"][0]["type"]["name"] if d["types"] else None,
+                "tipo_secundario": d["types"][1]["type"]["name"] if len(d["types"]) > 1 else None,
+                "hp_base": next((s["base_stat"] for s in d["stats"] if s["stat"]["name"] == "hp"), None),
+                "ataque_base": next((s["base_stat"] for s in d["stats"] if s["stat"]["name"] == "attack"), None),
+                "defesa_base": next((s["base_stat"] for s in d["stats"] if s["stat"]["name"] == "defense"), None),
+                "sprite_url": d.get("sprites", {}).get("front_default"),
+            })
 
-df_pokemon = pd.DataFrame(pokemon_lista)
+            if (i + 1) % 10 == 0:
+                print(f"  Extraídos: {i + 1}/50 pokémons...")
+            time.sleep(0.1)
 
-resultado_pokemon = writer.gravar(
-    df=df_pokemon,
-    sistema_origem="pokeapi",
-    entidade="pokemon",
-    versao_schema="1.0",
-)
+        df_pokemon = pd.DataFrame(pokemon_lista)
 
-writer.registrar_manifesto({
-    "pipeline": "pokeapi_bronze",
-    "execucao_em": datetime.now(timezone.utc).isoformat(),
-    "resultado": resultado_pokemon,
-})
+        resultado_pokemon = writer.gravar(
+            df=df_pokemon,
+            sistema_origem="pokeapi",
+            entidade="pokemon",
+            versao_schema="1.0",
+        )
 
-print(f"  ✅ {resultado_pokemon['registros']} pokémons gravados")
-print(f"  📍 {resultado_pokemon['caminho_objeto']}")
+        writer.registrar_manifesto({
+            "pipeline": "pokeapi_bronze",
+            "execucao_em": datetime.now(timezone.utc).isoformat(),
+            "resultado": resultado_pokemon,
+        })
 
-# ── 3. Relatório final ────────────────────────────────────────────────────────
-print("\n" + "=" * 55)
-print("  RELATÓRIO FINAL — CAMADA BRONZE")
-print("=" * 55)
+        print(f"  ✅ {resultado_pokemon['registros']} pokémons gravados")
+        print(f"  📍 {resultado_pokemon['caminho_objeto']}")
 
-for sistema, entidade in [("restcountries_api", "countries"), ("pokeapi", "pokemon")]:
-    particoes = writer.listar_particoes(sistema, entidade)
-    total_bytes = sum(p["tamanho_bytes"] for p in particoes)
-    print(f"\n  [{sistema}/{entidade}]")
-    print(f"    Arquivos:  {len(particoes)}")
-    print(f"    Tamanho:   {total_bytes / 1024:.1f} KB")
-    for p in particoes:
-        print(f"    📄 {p['caminho']}")
+    # ── 3. Relatório final ────────────────────────────────────────────────────────
+    print("\n" + "=" * 55)
+    print("  RELATÓRIO FINAL — CAMADA BRONZE")
+    print("=" * 55)
 
-print("\n  ✅ Camada Bronze organizada com particionamento correto!")
-print("  Acesse: http://localhost:9001/browser/bronze")
+    for sistema, entidade in [("restcountries_api", "countries"), ("pokeapi", "pokemon")]:
+        particoes = writer.listar_particoes(sistema, entidade)
+        total_bytes = sum(p["tamanho_bytes"] for p in particoes)
+        print(f"\n  [{sistema}/{entidade}]")
+        print(f"    Arquivos:  {len(particoes)}")
+        print(f"    Tamanho:   {total_bytes / 1024:.1f} KB")
+        for p in particoes:
+            print(f"    📄 {p['caminho']}")
+
+    print("\n  ✅ Camada Bronze organizada com particionamento correto!")
+    print("  Acesse: http://localhost:9001/browser/bronze")
+
+
+if __name__ == "__main__":
+    main()

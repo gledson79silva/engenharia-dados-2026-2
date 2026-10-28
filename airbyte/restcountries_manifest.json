@@ -1,0 +1,133 @@
+{
+  "version": "4.3.0",
+  "type": "DeclarativeSource",
+  "check": {
+    "type": "CheckStream",
+    "stream_names": [
+      "countries"
+    ]
+  },
+  "streams": [
+    {
+      "type": "DeclarativeStream",
+      "name": "countries",
+      "primary_key": [
+        [
+          "codes",
+          "alpha_2"
+        ]
+      ],
+      "retriever": {
+        "type": "SimpleRetriever",
+        "requester": {
+          "type": "HttpRequester",
+          "url_base": "https://api.restcountries.com/",
+          "path": "countries/v5",
+          "http_method": "GET",
+          "authenticator": {
+            "type": "BearerAuthenticator",
+            "api_token": "{{ config['api_key'] }}"
+          },
+          "request_parameters": {
+            "response_fields": "names.common,codes.alpha_2,flag.emoji"
+          }
+        },
+        "record_selector": {
+          "type": "RecordSelector",
+          "extractor": {
+            "type": "DpathExtractor",
+            "field_path": [
+              "data",
+              "objects"
+            ]
+          }
+        },
+        "paginator": {
+          "type": "DefaultPaginator",
+          "pagination_strategy": {
+            "type": "OffsetIncrement",
+            "page_size": 100
+          },
+          "page_size_option": {
+            "type": "RequestOption",
+            "field_name": "limit",
+            "inject_into": "request_parameter"
+          },
+          "page_token_option": {
+            "type": "RequestOption",
+            "field_name": "offset",
+            "inject_into": "request_parameter"
+          }
+        }
+      },
+      "schema_loader": {
+        "type": "InlineSchemaLoader",
+        "schema": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "names": {
+              "type": [
+                "null",
+                "object"
+              ],
+              "properties": {
+                "common": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                }
+              }
+            },
+            "codes": {
+              "type": [
+                "null",
+                "object"
+              ],
+              "properties": {
+                "alpha_2": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                }
+              }
+            },
+            "flag": {
+              "type": [
+                "null",
+                "object"
+              ],
+              "properties": {
+                "emoji": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "spec": {
+    "type": "Spec",
+    "connection_specification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": [
+        "api_key"
+      ],
+      "properties": {
+        "api_key": {
+          "type": "string",
+          "title": "REST Countries API key",
+          "airbyte_secret": true
+        }
+      }
+    }
+  }
+}

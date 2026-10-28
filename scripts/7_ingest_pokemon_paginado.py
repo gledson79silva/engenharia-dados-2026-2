@@ -9,6 +9,8 @@ A PokeAPI demonstra dois padrões fundamentais de ingestão:
   2. Enriquecimento: cada item da lista requer uma segunda requisição
      para obter os detalhes completos (padrão "list + detail")
 """
+import course_config  # carrega .env e mantém o estado dlt neste projeto
+
 import truststore
 truststore.inject_into_ssl()
 
@@ -101,7 +103,7 @@ def normalizar_pokemon(dados: dict, timestamp: str) -> dict:
 
 @dlt.resource(
     name="pokemon",
-    write_disposition="replace",
+    write_disposition="append",
     primary_key="id",
 )
 
@@ -161,7 +163,7 @@ def executar_pipeline():
     pipeline = dlt.pipeline(
         pipeline_name="pokeapi_bronze",
         destination="filesystem",
-        dataset_name="pokeapi",
+        dataset_name="pokeapi_dlt",
     )
  
     logger.info("Iniciando pipeline: PokeAPI → MinIO Bronze")
@@ -179,7 +181,7 @@ def executar_pipeline():
     print("=" * 60)
     print(f"  Status:        {'✅ Sucesso' if not info.has_failed_jobs else '❌ Falha'}")
     print(f"  Duração:       {duracao:.2f}s")
-    print(f"  Destino:       s3://bronze/pokeapi/")
+    print(f"  Destino:       s3://bronze/pokeapi_dlt/")
     print(f"  Formato:       Parquet + Snappy")
     print()
     print("  Detalhes da carga:")
