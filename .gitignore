@@ -20,3 +20,6 @@ __pycache__/
 # Dados sinteticos grandes
 data/bronze/sintetico/pedidos.csv
 data/bronze/sintetico/pedidos.jsonl
+
+# Backup local das instruções do agente
+/AGENTS.md.bak
